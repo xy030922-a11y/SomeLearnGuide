@@ -1,7 +1,7 @@
-# Qt 常用类教程目录 / Qt Common Classes Tutorial Contents
+# Qt 常用类与 OpenCV 教程目录 / Qt Common Classes and OpenCV Tutorial Contents
 
-> 本教程以 **Qt 6.5.3 + C++17** 为统一基线，依次介绍五个常用模块（`Qt Core`、`Qt GUI`、`Qt Widgets`、`Qt Network`、`Qt SQL`）以及 `Qt TextToSpeech` 语音合成模块。除非特别说明，文中的 API、CMake 配置和示例代码均应兼容 Qt 6.5.3。  
-> This tutorial uses **Qt 6.5.3 + C++17** as its consistent baseline and covers five commonly used modules (`Qt Core`, `Qt GUI`, `Qt Widgets`, `Qt Network`, and `Qt SQL`), followed by the `Qt TextToSpeech` speech-synthesis module. Unless otherwise stated, all APIs, CMake configurations, and examples should be compatible with Qt 6.5.3.
+> 本教程以 **Qt 6.5.3 + C++17** 为统一基线，依次介绍五个常用模块（`Qt Core`、`Qt GUI`、`Qt Widgets`、`Qt Network`、`Qt SQL`）、`Qt TextToSpeech` 语音合成模块，以及 **OpenCV 4.x C++ API 与 Qt 集成**。OpenCV 是独立的第三方计算机视觉库，需单独配置依赖；示例项目应记录所用 OpenCV 的具体版本。除非特别说明，文中的 Qt API、CMake 配置和示例代码均应兼容 Qt 6.5.3。\
+> This tutorial uses **Qt 6.5.3 + C++17** as its consistent baseline and covers five commonly used modules (`Qt Core`, `Qt GUI`, `Qt Widgets`, `Qt Network`, and `Qt SQL`), the `Qt TextToSpeech` speech-synthesis module, and **OpenCV 4.x C++ APIs with Qt integration**. OpenCV is a separate third-party computer vision library that requires its own dependency configuration; example projects should record the exact OpenCV version used. Unless otherwise stated, all Qt APIs, CMake configurations, and examples should be compatible with Qt 6.5.3.
 
 ## 教程导读 / Tutorial Guide
 
@@ -16,6 +16,7 @@
 9. Qt 的对象所有权与父子对象机制 / Object ownership and the parent-child mechanism
 10. `lupdate`、`lrelease` 与 Qt Linguist 国际化流程 / Internationalization with lupdate, lrelease, and Qt Linguist
 11. `windeployqt`、`macdeployqt` 与平台部署工具 / windeployqt, macdeployqt, and platform deployment tools
+12. Qt 与 OpenCV 的职责分工、图像处理流程与学习顺序 / Qt and OpenCV responsibilities, image-processing workflows, and learning order
 
 ---
 
@@ -535,6 +536,136 @@
 
 ---
 
+## 第七篇：OpenCV 与 Qt——图像处理与计算机视觉 / Part VII: OpenCV and Qt — Image Processing and Computer Vision
+
+> 本篇采用 OpenCV 4.x 的 C++ 接口，建议先掌握第 8 章的线程基础、第 11 章的图像类以及第 16 章的 Widgets 基础。模块划分与构建选项参考 [OpenCV 官方教程](https://docs.opencv.org/4.x/d9/df8/tutorial_root.html)和[构建配置文档](https://docs.opencv.org/4.x/db/d05/tutorial_config_reference.html)。\
+> This part uses the OpenCV 4.x C++ API. Study threading in Chapter 8, image classes in Chapter 11, and Widgets basics in Chapter 16 first. Module coverage and build options follow the [official OpenCV tutorials](https://docs.opencv.org/4.x/d9/df8/tutorial_root.html) and [configuration reference](https://docs.opencv.org/4.x/db/d05/tutorial_config_reference.html).
+
+### 第 40 章：OpenCV 入门与环境配置 / Chapter 40: OpenCV Introduction and Environment Setup
+
+1. OpenCV 简介：图像处理、计算机视觉与 Qt 界面协作 / Introduction to OpenCV, image processing, computer vision, and Qt interfaces
+2. `core`、`imgproc`、`imgcodecs`、`videoio` 与可选的 `highgui` 模块 / Core, image processing, image codecs, video I/O, and optional HighGUI modules
+3. `features2d`、`calib3d`、`video`、`objdetect` 与 `dnn` 模块概览 / Overview of feature, calibration, video analysis, object detection, and DNN modules
+4. 预编译库与源码编译：MSVC、MinGW、目标架构和运行库匹配 / Prebuilt libraries and source builds: matching MSVC, MinGW, target architectures, and runtimes
+5. `OpenCV_DIR`、`CMAKE_PREFIX_PATH` 与 `OpenCVConfig.cmake` 的定位 / Locating OpenCVConfig.cmake with OpenCV_DIR and CMAKE_PREFIX_PATH
+6. `find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs videoio)` 与按需选择组件 / Finding OpenCV 4 and selecting required components
+7. `OpenCV_INCLUDE_DIRS`、`OpenCV_LIBS` 与 `Qt6::Widgets` 的目标级配置 / Target-level configuration of OpenCV include paths, libraries, and Qt6::Widgets
+8. Debug/Release 库匹配、动态库搜索路径与常见链接错误 / Matching Debug/Release libraries, runtime library search paths, and common linker errors
+9. `opencv_contrib` 与主库版本匹配、`OPENCV_EXTRA_MODULES_PATH` 配置 / Matching opencv_contrib to the main library version and configuring extra modules
+10. `CV_VERSION`、`cv::getBuildInformation()` 与第一个 Qt + OpenCV 图像显示程序 / Version and build diagnostics, and a first Qt + OpenCV image viewer
+11. `WITH_QT` 是 HighGUI 的 Qt 后端选项；使用 Qt Widgets 显示 OpenCV 图像无需启用该选项 / WITH_QT enables the HighGUI Qt backend and is unnecessary for displaying OpenCV images with Qt Widgets
+
+### 第 41 章：核心数据结构与图像内存 / Chapter 41: Core Data Structures and Image Memory
+
+1. `cv::Mat`：矩阵创建、初始化、`empty()` 与资源管理 / Matrix creation, initialization, empty checks, and resource management
+2. `rows`、`cols`、`size()`、`type()`、`depth()` 与 `channels()` / Image dimensions, types, bit depths, and channel counts
+3. `CV_8UC1`、`CV_8UC3`、`CV_8UC4`、`CV_16UC1` 与 `CV_32FC1` / Common grayscale, color, high-bit-depth, and floating-point image types
+4. `cv::Point`、`cv::Size`、`cv::Rect`、`cv::Scalar` 与 `cv::Vec` / Points, sizes, rectangles, scalar values, and fixed-size vectors
+5. `data`、`step`、`elemSize()` 与 `isContinuous()`：行步长和连续内存 / Data pointers, row strides, element sizes, and continuous storage
+6. ROI、子矩阵与边界检查 / Regions of interest, submatrices, and bounds checking
+7. 浅复制、引用计数与共享数据修改；`clone()`、`copyTo()` 与显式深复制 / Shallow copies, reference counting, shared-data writes, and explicit deep copies
+8. 外部缓冲区构造 `cv::Mat` 时的所有权与生命周期 / Ownership and lifetime when wrapping external buffers
+9. `at<T>()`、`ptr<T>()` 与逐行像素访问 / Typed element access, row pointers, and pixel traversal
+10. `convertTo()`、`split()`、`merge()`、掩码与矩阵运算 / Type conversion, channel operations, masks, and matrix arithmetic
+
+### 第 42 章：图像读写与基础处理 / Chapter 42: Image I/O and Basic Processing
+
+1. `cv::imread()`、`cv::imwrite()` 与读取标志、编码参数 / Image loading, saving, read flags, and encoding parameters
+2. `QFile` 配合 `cv::imdecode()`、`cv::imencode()`：中文路径、资源文件与内存图像 / Using QFile with image decoding and encoding for Unicode paths, resources, and memory buffers
+3. `cv::cvtColor()`：BGR、RGB、灰度与 HSV 色彩空间 / BGR, RGB, grayscale, and HSV color conversions
+4. `cv::resize()`、`cv::flip()`、`cv::rotate()` 与插值方式 / Resizing, flipping, rotation, and interpolation methods
+5. `cv::GaussianBlur()`、`cv::medianBlur()` 与 `cv::bilateralFilter()` / Gaussian, median, and bilateral filtering
+6. `cv::threshold()`、`cv::adaptiveThreshold()` 与 Otsu 二值化 / Fixed, adaptive, and Otsu thresholding
+7. `cv::inRange()`：颜色范围筛选与掩码 / Color-range selection and masks
+8. `cv::erode()`、`cv::dilate()` 与 `cv::morphologyEx()` / Erosion, dilation, and morphological operations
+9. `cv::Sobel()`、`cv::Laplacian()` 与 `cv::Canny()`：梯度和边缘检测 / Gradients and edge detection
+10. `cv::calcHist()`、`cv::equalizeHist()` 与 `cv::createCLAHE()` / Histograms, histogram equalization, and adaptive contrast enhancement
+11. `cv::warpAffine()`、`cv::warpPerspective()` 与几何变换 / Affine and perspective transformations
+12. `cv::line()`、`cv::rectangle()`、`cv::circle()` 与 `cv::putText()`；使用 `QPainter` 叠加中文标注 / Drawing primitives and text, with QPainter for Chinese annotations
+13. 输入尺寸、数据类型、通道数校验与 `cv::Exception` 处理 / Validating dimensions, types, and channels, and handling OpenCV exceptions
+
+### 第 43 章：轮廓、形状与特征匹配 / Chapter 43: Contours, Shapes, and Feature Matching
+
+1. `cv::findContours()` 与 `cv::drawContours()`：轮廓提取和绘制 / Finding and drawing contours
+2. 轮廓层级、检索模式与近似方法 / Contour hierarchy, retrieval modes, and approximation methods
+3. `cv::contourArea()`、`cv::arcLength()` 与 `cv::moments()` / Contour areas, perimeters, and image moments
+4. `cv::boundingRect()`、`cv::minAreaRect()` 与 `cv::minEnclosingCircle()` / Bounding rectangles, rotated rectangles, and enclosing circles
+5. `cv::approxPolyDP()`、`cv::convexHull()` 与形状筛选 / Polygon approximation, convex hulls, and shape filtering
+6. `cv::connectedComponentsWithStats()`：连通区域标记与统计 / Connected-component labeling and statistics
+7. `cv::HoughLinesP()` 与 `cv::HoughCircles()`：直线和圆检测 / Line and circle detection
+8. `cv::matchTemplate()` 与 `cv::minMaxLoc()`：模板匹配和结果定位 / Template matching and locating match results
+9. `cv::ORB`、`cv::SIFT`、`cv::KeyPoint` 与特征描述子 / ORB, SIFT, keypoints, and feature descriptors
+10. `cv::BFMatcher`、`cv::FlannBasedMatcher` 与描述子类型、距离度量匹配 / Feature matching with compatible descriptor types and distance metrics
+11. 比率检验、`cv::findHomography()` 与 RANSAC 外点剔除 / Ratio tests, homography estimation, and RANSAC outlier rejection
+
+### 第 44 章：视频文件与摄像头采集 / Chapter 44: Video Files and Camera Capture
+
+1. `cv::VideoCapture`：打开摄像头、视频文件与后端支持的网络流 / Opening cameras, video files, and network streams supported by the backend
+2. `isOpened()`、`read()`、`grab()`、`retrieve()` 与 `release()` / Capture state, frame acquisition, frame retrieval, and resource release
+3. `CAP_ANY`、`CAP_MSMF`、`CAP_DSHOW` 与 `CAP_FFMPEG`：按平台和构建选择后端 / Selecting capture backends by platform and build configuration
+4. 分辨率、帧率、曝光与属性设置结果检查 / Resolution, frame rate, exposure, and checking property-setting results
+5. 视频总帧数、当前位置、跳转与时间戳的后端差异 / Backend differences in frame counts, positions, seeking, and timestamps
+6. 空帧、文件结束、设备占用、断连与重连处理 / Empty frames, end of file, busy devices, disconnections, and reconnection
+7. `cv::VideoWriter`、`fourcc()`、帧尺寸、帧率与编码器兼容 / Video recording, codec identifiers, frame dimensions, frame rates, and encoder compatibility
+8. Qt 播放状态、定时调度与后台解码协作 / Coordinating Qt playback state, timing, and background decoding
+9. `cv::imshow()`、`cv::waitKey()` 的 HighGUI 调试用途与事件处理；Qt Widgets 中的图像显示流程 / HighGUI debugging and event handling, and image presentation in Qt Widgets
+
+### 第 45 章：cv::Mat 与 Qt 图像集成 / Chapter 45: Integrating cv::Mat with Qt Images
+
+1. `cv::Mat`、`QImage` 与 `QPixmap` 的用途和转换流程 / Roles and conversion workflows for cv::Mat, QImage, and QPixmap
+2. `CV_8UC1` 与 `QImage::Format_Grayscale8`：灰度图像转换 / Grayscale image conversion
+3. `CV_8UC3` 与 `QImage::Format_BGR888`、`Format_RGB888`：通道顺序和颜色转换 / Channel ordering and conversion for BGR and RGB images
+4. BGRA、RGBA、`Format_ARGB32` 与 `Format_RGBA8888`：字节序及预乘 Alpha / Byte order and premultiplied alpha in four-channel images
+5. `cv::Mat::step` 与 `QImage::bytesPerLine()`：行对齐、填充和非连续 ROI / Row alignment, padding, and non-contiguous regions of interest
+6. 16 位与浮点图像的格式选择、归一化和显示范围 / Format selection, normalization, and display ranges for high-bit-depth and floating-point images
+7. 外部缓冲区的有效期、`QImage::copy()` 与 `cv::Mat::clone()` 的拷贝边界 / External-buffer lifetime and explicit copy boundaries
+8. `QImage::bits()`、`constBits()`、隐式共享与只读数据访问 / Image buffers, implicit sharing, and read-only data access
+9. 在 GUI 线程创建 `QPixmap` 并更新 `QLabel`、自定义 `QWidget` 或 `QGraphicsView` / Creating pixmaps and updating image displays on the GUI thread
+10. 等比例缩放、缩放和平移、鼠标坐标映射与交互式 ROI / Aspect-ratio preservation, zooming, panning, coordinate mapping, and interactive regions of interest
+
+> 图像内存与格式转换参考 [OpenCV cv::Mat 文档](https://docs.opencv.org/4.x/d3/d63/classcv_1_1Mat.html)和 [Qt 6.5 QImage 文档](https://doc.qt.io/qt-6.5/qimage.html)。\
+> For image memory and format conversion, see the [OpenCV cv::Mat reference](https://docs.opencv.org/4.x/d3/d63/classcv_1_1Mat.html) and [Qt 6.5 QImage reference](https://doc.qt.io/qt-6.5/qimage.html).
+
+### 第 46 章：多线程图像处理与性能 / Chapter 46: Multithreaded Image Processing and Performance
+
+1. 采集、算法处理与界面显示的职责划分 / Separating capture, processing, and display responsibilities
+2. `QObject` 工作对象与 `QThread`：在所属线程打开、使用和释放采集设备 / Worker objects and capture-device lifecycle within the owning thread
+3. 队列连接、`Q_DECLARE_METATYPE(cv::Mat)` 与 `qRegisterMetaType<cv::Mat>()` / Queued connections and cv::Mat meta-type registration
+4. `cv::Mat` 共享缓冲区不提供写时复制：跨线程快照、独占所有权与同步 / Shared Mat buffers without copy-on-write: cross-thread snapshots, exclusive ownership, and synchronization
+5. 有界帧队列、丢帧策略与避免信号队列积压 / Bounded frame queues, frame-dropping policies, and preventing queued-signal buildup
+6. 停止标志、后端支持的读取超时、线程退出与资源回收 / Stop flags, backend-supported read timeouts, thread shutdown, and resource cleanup
+7. `QtConcurrent::run()`、`QFutureWatcher` 与批量图片处理 / Concurrent tasks, future monitoring, and batch image processing
+8. 参数防抖、任务版本标记与过期结果丢弃 / Debouncing parameter changes, tagging tasks, and discarding stale results
+9. `QElapsedTimer`、`cv::TickMeter`、处理帧率与端到端延迟 / Timing, processing frame rates, and end-to-end latency
+10. 缓冲区复用、减少拷贝、ROI 处理与 Qt/OpenCV 线程数量协调 / Buffer reuse, copy reduction, region-based processing, and coordinating thread counts
+11. 可选加速：`cv::UMat`、OpenCL 与 `cv::cuda::GpuMat` 的构建依赖和数据传输成本 / Optional acceleration with UMat, OpenCL, and CUDA: build dependencies and transfer costs
+
+### 第 47 章：计算机视觉进阶（可选）/ Chapter 47: Further Computer Vision Topics (Optional)
+
+1. 相机模型、内参、外参与畸变系数 / Camera models, intrinsics, extrinsics, and distortion coefficients
+2. `cv::findChessboardCorners()`、`cv::cornerSubPix()` 与 `cv::calibrateCamera()` / Chessboard detection, subpixel refinement, and camera calibration
+3. `cv::undistort()`、`cv::initUndistortRectifyMap()` 与 `cv::remap()` / Distortion correction and image remapping
+4. `cv::solvePnP()` 与 `cv::projectPoints()`：姿态估计和重投影 / Pose estimation and reprojection
+5. `cv::createBackgroundSubtractorMOG2()` 与 `cv::calcOpticalFlowPyrLK()` / Background subtraction and sparse optical flow
+6. `cv::CascadeClassifier` 与 `cv::QRCodeDetector`：级联分类器和二维码检测 / Cascade classifiers and QR-code detection
+7. `cv::dnn::Net`、`cv::dnn::readNetFromONNX()`、`setInput()` 与 `forward()` / Loading ONNX networks and running inference
+8. 模型输入尺寸、归一化、通道顺序、输出解析与 `cv::dnn::NMSBoxes()` / Model preprocessing, output parsing, and non-maximum suppression
+9. 模型算子兼容、推理后端、计算目标与可选运行依赖 / Model operator compatibility, inference backends, computation targets, and optional runtime dependencies
+10. `cv::FileStorage`：标定参数与算法配置的保存和加载 / Saving and loading calibration parameters and algorithm settings
+
+### 第 48 章：Qt + OpenCV 综合实践与部署 / Chapter 48: Qt + OpenCV Projects and Deployment
+
+1. 图片处理工具：打开、预览、参数调节、效果对比与保存 / An image-processing tool with loading, previews, parameter controls, comparisons, and saving
+2. 摄像头预览与录像：设备选择、拍照、录制与状态显示 / Camera preview and recording with device selection, snapshots, and status display
+3. 交互式 ROI 与轮廓测量：区域选择、目标计数和结果叠加 / Interactive regions of interest, contour measurements, object counting, and overlays
+4. 特征匹配演示：关键点显示、匹配连线与目标定位 / A feature-matching demo with keypoints, match visualization, and object localization
+5. 批量图像处理：任务队列、进度、取消与结果导出 / Batch processing with task queues, progress, cancellation, and result export
+6. 检测结果与 Qt SQL、Qt Network、Qt TextToSpeech 联动 / Integrating detection results with databases, networking, and speech synthesis
+7. Qt 部署工具、OpenCV 动态库、视频后端与模型资源的打包和核验 / Packaging and verifying Qt dependencies, OpenCV libraries, video backends, and model assets
+8. 干净环境验证与排错：缺失 DLL、平台插件、编解码器、颜色异常和图像内存失效 / Clean-environment checks for missing libraries, platform plugins, codecs, incorrect colors, and invalid image buffers
+
+---
+
 ## 附录 / Appendices
 
 1. Qt 5 到 Qt 6 的常见迁移问题 / Common Qt 5 to Qt 6 migration issues
@@ -545,3 +676,6 @@
 6. Qt 插件与数据库驱动部署 / Deploying Qt plugins and database drivers
 7. Windows、Linux 与 macOS 应用发布 / Deploying on Windows, Linux, and macOS
 8. 常用类速查表 / Common class quick reference
+9. Qt + OpenCV 的 CMake 配置、编译器与运行库匹配清单 / Qt + OpenCV CMake configuration, compiler, and runtime compatibility checklist
+10. `cv::Mat` 与 `QImage` 的格式、通道顺序、行步长和生命周期速查 / Quick reference for Mat/QImage formats, channel order, row strides, and lifetimes
+11. OpenCV 模块、视频后端与可选加速依赖速查 / Quick reference for OpenCV modules, video backends, and optional acceleration dependencies
