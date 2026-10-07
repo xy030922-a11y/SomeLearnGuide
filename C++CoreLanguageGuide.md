@@ -8,6 +8,8 @@
 
 **阅读方法：** 每个主题先理解规则，再观察示例，最后检查前置条件和失败路径。不要把“能编译”“运行一次正常”和“符合语言规则”混为一谈。首次阅读可依次读 1–6 章，再学习复制、多态和模板。
 
+**版本口径：** 以 C++98/03 的基础能力为范围；涉及后来追溯适用的核心语言缺陷修正（CWG DR）时明确说明。现代编译器通常将部分修正应用到旧标准模式，旧模式编译通过不等于逐条复现当年发布原文。
+
 ## 阅读导航
 
 1. [程序与作用域](#program)
@@ -29,15 +31,22 @@
 | 作用域、链接与存储期 | [1.3](#scope-linkage) |
 | 初始化与函数声明歧义 | [2.3](#initialization) |
 | 聚合初始化与 sizeof | [2.7](#aggregate-initialization)、[2.8](#sizeof) |
+| const 与 volatile 的边界 | [2.9](#cv-qualifiers) |
 | 优先级与求值顺序 | [3.2](#evaluation-order) |
 | 重载与 const 限定 | [4.3](#overloads) |
 | ADL 与默认表达式 | [4.9](#adl-defaults) |
 | 数组退化和指针范围 | [5.2](#array-decay) |
 | 指向成员的指针 | [6.7](#member-pointers) |
+| 位域的访问限制 | [6.9](#bit-fields) |
+| 嵌套类与访问权限 | [6.10](#nested-classes) |
 | 隐藏、重载和覆盖 | [8.3](#virtual-dispatch) |
+| 虚函数默认实参与限定调用 | [8.8](#virtual-defaults) |
+| 协变返回类型 | [8.9](#covariant-return) |
 | 模板全特化、偏特化与重载 | [9.5](#specialization) |
 | 传统类型 SFINAE 示例 | [9.9](#type-sfinae) |
 | 构造失败与异常安全 | [10.3](#construction-failure) |
+| 构造失败的成员清理示例 | [10.5](#construction-example) |
+| 构造函数 try 块 | [10.6](#constructor-try-block) |
 
 <a id="program"></a>
 ## 1. 程序与作用域
@@ -164,7 +173,7 @@ int main() {
 | `bool` | 逻辑值 | `true` / `false` |
 | `char`、`signed char`、`unsigned char` | 字符单元或小整数 | 三者是不同类型；普通 `char` 的符号性由实现决定 |
 | `short`、`int`、`long` | 有符号整数 | 不假定具体位宽；`int` 至少 16 位，`long` 至少 32 位 |
-| 对应的 `unsigned` 类型 | 无符号整数 | 不能表示负数，运算按其范围取模 |
+| 对应的 `unsigned` 类型 | 无符号整数 | 无符号结果按相应结果类型范围取模；较窄类型运算前可能先提升为 `int` |
 | `float`、`double`、`long double` | 浮点数 | 存在舍入误差 |
 | `wchar_t` | 宽字符类型 | 位宽和编码由实现决定 |
 | 指针、引用、数组、函数类型 | 组织访问与调用关系 | 各自有独立规则 |
@@ -206,6 +215,20 @@ Counter requests = 0;
 最后一种常被称为声明歧义或 most vexing parse 的相关情形。遇到可被解释为声明的写法，应先检查它究竟声明了什么。
 
 C++03 对值初始化作了调整，历史缺陷修正也会影响旧工具链的解释。不要以为任意类对象的空初始化都会把其所有成员清零；用户编写的构造函数仍应明确初始化基本类型成员。本文的资源类都用成员初始化列表或明确赋值建立状态。相关差异可查 [CWG 178：值初始化](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2012/n3368.html#178)。
+
+静态存储期对象涉及先行的零初始化规则，不能套用“自动局部整数没有初值”的结论。下面两个整数没有显式初值，但都为 0：
+
+**片段，定义分别放在注明的作用域：**
+
+```cpp
+int globalZero; // 命名空间作用域，静态存储期
+void example() {
+    static int localZero; // 名字是局部的，存储期仍为静态
+    (void)localZero;
+}
+```
+
+零初始化按类型建立零值，包括空指针值，不等于“对任意对象执行字节清零”。类对象后续仍可能执行构造函数；普通自动局部对象不能据此省略初始化。[传统静态初始化规则](https://www.open-std.org/jtc1/sc22/open/n2356/basic.html#basic.start.init)。
 
 ### 2.4 不完整类型、数组与字符串字面量
 
@@ -335,6 +358,26 @@ std::size_t integerBytes = sizeof(++number); // number 仍为 0
 
 内建固定数组的界必须是合法的正整型常量表达式，`int values[0];` 不是标准写法；第 5.4 节允许的 `new T[0]` 是不同规则。结构体大小还可能包含填充，不能只把成员大小相加。
 
+<a id="cv-qualifiers"></a>
+### 2.9 `const` 与 `volatile` 的边界
+
+`const` 和 `volatile` 是类型限定，关注的问题不同；二者可以同时使用。`const` 限制通过相应路径修改对象，`volatile` 访问则受实现需要遵守的可观察行为规则约束。
+
+**片段，放在函数体内：**
+
+```cpp
+int value = 7;
+const int* readOnly = &value;
+volatile int* observable = &value;
+const volatile int* both = &value;
+```
+
+这些限定都附着在所指类型上，指针本身仍可改指向。对 `volatile` 对象的访问如何与硬件等环境交互，还需要查实现和平台约定；给变量加上它不会创建硬件设备或自动获得适用的系统接口。
+
+`volatile` 不提供原子读写、互斥或线程间同步，也不保证整个算法的执行顺序。线程共享状态应按并发指南的同步协议处理。
+
+修改原本为 `const` 的对象，或通过不具有 `volatile` 限定的左值访问原本声明为 `volatile` 的对象，会违反相应语言要求；不能把 `const_cast` 当成绕过契约的通用工具。普通对象经带限定的访问路径访问，与对象本身声明为相应限定类型，要分别判断。[传统 cv 限定规则](https://www.open-std.org/jtc1/sc22/open/n2356/dcl.html#dcl.type.cv)。
+
 <a id="control"></a>
 ## 3. 表达式与流程控制
 
@@ -410,6 +453,27 @@ int main() {
 
 `while` 先判断条件，`do ... while` 至少执行一次。条件中涉及读取时，应使用操作本身的成功结果推进循环，避免先判断旧状态再使用失败结果。
 
+`case` 和 `default` 是标签，不自动形成新作用域。若某个分支需要局部初始化对象，使用花括号限定该分支的作用域，避免跳转跨过初始化。
+
+**片段，放在函数体内；假定 `choice` 是已初始化的整型或枚举表达式：**
+
+```cpp
+switch (choice) {
+case 1: {
+    int result = 10;
+    // 使用 result
+    (void)result;
+    break;
+}
+case 2:
+    break;
+default:
+    break;
+}
+```
+
+普通 `goto` 同样受跳入作用域和跨越初始化的限制，不是绕开对象构造的工具。控制流离开拥有已构造自动对象的作用域时，会按规则进行清理。[传统跳转规则](https://www.open-std.org/jtc1/sc22/open/n2356/stmt.html#stmt.dcl)。
+
 ### 3.4 左值、右值与赋值对象
 
 在传统分类中，左值表示可用于标识对象或函数的表达式；右值常来自计算结果或临时值。左值不等于“总能写入”：`const int` 对象表达式是左值，但不能赋值。
@@ -463,6 +527,8 @@ int add(int left, int right) { // 定义，提供函数体
 
 声明可以省略参数名，如 `int add(int, int);`，但有意义的名字能帮助读者理解接口。重复声明必须一致；普通非 `inline` 函数在整个程序中只能有一个定义，跨文件规则见工程化指南。
 
+本节 `add` 片段不执行范围检查，前置条件是加法结果能由 `int` 表示。实际外部输入接口可按业务需要拒绝越界输入或使用适当的结果类型。
+
 调用前需要可见的声明。形参与实参的区别是：形参属于函数接口，实参是一次调用提供的表达式。形参是函数内的局部对象或引用，名字只在对应作用域有效。
 
 `void` 表示函数不返回值，提前结束可写 `return;`。C++ 中的 `void f();` 声明无参数函数。有返回值的函数应保证每条正常结束路径都返回有效结果；`main()` 到达结尾等效于返回 `0`，不要将此特例套到其他函数。
@@ -484,7 +550,7 @@ int add(int left, int right) { // 定义，提供函数体
 **片段，放在命名空间作用域；递增操作要求输入值小于 `int` 的最大值：**
 
 ```cpp
-void incrementCopy(int value) { ++value; }
+void incrementCopy(int value) { ++value; (void)value; }
 void incrementOriginal(int& value) { ++value; }
 void incrementPointed(int* value) {
     if (value != 0) { ++*value; }
@@ -524,6 +590,22 @@ void read(const int*);   // 不同重载：所指类型的 const 保留
 
 按值形参的**顶层 `const`** 不参与区分函数类型，但在函数定义内部仍限制修改形参。指针所指对象的 `const`、引用所引用对象的 `const` 是另一层限定，不能一概忽略。
 
+有多个实参时，要逐个比较转换：候选函数必须在所有实参的转换上不劣于另一个候选，并在至少一个实参上更好，或满足适用的平局规则。两个候选分别在不同实参上更优，仍可能歧义。
+
+**片段，声明放在命名空间作用域：**
+
+```cpp
+void choosePair(int, long);
+void choosePair(long, int);
+// choosePair(1, 1); // 歧义：两个候选各有一个精确匹配
+
+void selectValue(int);
+template <class T> void selectValue(T);
+// selectValue(1.0); // 模板 T=double 精确匹配，优于非模板的 double->int 转换
+```
+
+“优先非模板函数”不是不加条件的总规则，只有在相应转换比较不能分出胜负等适用条件下，才考虑这类平局规则。[传统最佳可行函数规则](https://www.open-std.org/jtc1/sc22/open/n2356/over.html#over.match.best)。
+
 ### 4.4 默认参数
 
 默认参数通常写在调用者可见的声明中，定义不重复指定。同一作用域中，即使写相同的默认值也不能重复提供它。
@@ -539,6 +621,8 @@ int multiply(int value, int factor) { return value * factor; }
 ```
 
 `multiply(4)` 等效于使用默认实参调用 `multiply(4, 2)`。一旦某形参有默认值，后续形参也必须有默认值，或已在同一作用域可见的先前声明中获得默认值。
+
+该 `multiply` 片段要求乘法结果能由 `int` 表示；默认实参不会自动保证算术范围。
 
 默认表达式在每次缺省该实参的调用时求值。默认值属于调用处可见的声明，不是函数指针类型的一部分；通过函数指针调用时必须提供它的全部参数。
 
@@ -561,7 +645,7 @@ void processRows(int values[][3], std::size_t rows);
 
 数组形参会调整为指针形参，`[10]` 不验证实际数组长度。在函数内对该形参使用 `sizeof`，得到指针大小，无法恢复原数组元素个数。多维数组只调整最外层，后续维度仍属于所指类型。
 
-指针与长度接口应规定：`count == 0` 时可以允许空指针；`count > 0` 时必须指向至少 `count` 个有效元素；若进行求和，还要保证结果可表示。更好的长度保留方式包括数组引用，例如 `const int (&values)[3]`，或第 9 章的数组引用模板。
+指针与长度接口应规定：`count == 0` 时可以允许空指针；`count > 0` 时必须指向至少 `count` 个有效元素；若进行求和，还要保证每一步累加的中间结果都可由累加类型表示。最终数学和可表示，不排除中间步骤先溢出。更好的长度保留方式包括数组引用，例如 `const int (&values)[3]`，或第 9 章的数组引用模板。
 
 ### 4.6 函数指针与回调
 
@@ -579,6 +663,8 @@ int invoke(BinaryOperation operation, int left, int right) {
 `int (*p)(int, int)` 是指向函数的指针；括号不可省略，`int* p(int, int)` 声明的是返回 `int*` 的函数。`typedef` 能减少这种声明的阅读成本。
 
 初始化可写 `BinaryOperation p = &subtract;` 或 `BinaryOperation p = subtract;`。调用前确保指针有效；如果名字被重载，目标指针类型用于选择匹配的函数。
+
+`subtract` 要求减法结果可由 `int` 表示，`invoke` 还要求实参满足所调用函数的契约。把函数包装成回调不会自动增加输入校验。
 
 普通非静态成员函数需要对象，其指针类型和调用形式不同，不能直接当作上述普通函数指针。带状态的可调用对象见第 9 章。
 
@@ -613,7 +699,7 @@ typedef int (*BinaryOperation)(int, int);
 int add(int left, int right) { return left + right; }
 int multiply(int value, int factor = 2) { return value * factor; }
 
-void incrementCopy(int value) { ++value; }
+void incrementCopy(int value) { ++value; (void)value; }
 void incrementOriginal(int& value) { ++value; }
 
 int apply(BinaryOperation operation, int left, int right) {
@@ -912,7 +998,7 @@ private:
 // 调用前置条件：first < int 的最大值，避免 first_ + 1 溢出。
 ```
 
-`const` 标量成员（包括整数、指针等）、引用成员，以及不能合法默认构造的类类型成员，需要通过相应初始化列表建立状态。具有合适默认构造函数的 `const` 类类型成员可以省略相应初始化项，例如 `const std::string` 可默认构造。引用成员还要求被引用对象活得足够久。不要认为省略基本类型成员的初始化就会自动归零：常见的局部对象中，没有初始化也没有赋值的整数成员不能直接读取。静态存储期等情形还涉及先前的零初始化规则。
+`const` 标量成员（包括整数、指针等）、引用成员，以及不能合法默认构造的类类型成员，需要通过相应初始化列表建立状态。在此旧版范围中，具有可访问的用户声明默认构造函数的 `const` 类类型成员可以省略相应初始化项，例如 `const std::string` 可默认构造；不要只凭“编译器能生成一个隐式构造函数”就推广这一条件。引用成员还要求被引用对象活得足够久。不要认为省略基本类型成员的初始化就会自动归零：常见的局部对象中，没有初始化也没有赋值的整数成员不能直接读取。静态存储期等情形还涉及第 2.3 节的零初始化规则。
 
 没有用户声明的构造函数时，编译器隐式声明默认构造函数；一旦自行声明任意构造函数，就不再自动补这个无参构造。隐式声明也不保证可用：基类或成员无法合法默认构造时，使用它会导致非良构程序。默认构造函数是**可以无实参调用**的构造函数，`Account(int = 0)` 也属于这一类。[规则核对：原始工作稿的构造与初始化章节](https://www.open-std.org/jtc1/sc22/open/n2356/special.html#class.ctor)。
 
@@ -1063,6 +1149,56 @@ private:
 
 隐式转换会影响重载选择；多个转换路径可能产生歧义，一条普通隐式转换序列也不能随意串联多个用户定义转换。需要精确控制接口时，命名访问函数往往更清楚。
 
+<a id="bit-fields"></a>
+### 6.9 位域的语言限制
+
+位域用成员声明中的 `: width` 指定位数，宽度是符合要求的整型常量表达式。它可以描述有限范围的状态，但不提供可移植的外部字节布局。
+
+**片段，类型定义放在命名空间作用域：**
+
+```cpp
+struct Flags {
+    unsigned int ready : 1;
+    unsigned int mode : 2;
+};
+// 在函数体内：
+// Flags flags = {1, 3};
+// unsigned int mode = flags.mode; // 得到 3
+// unsigned int* p = &flags.mode; // 错误：不能取得位域地址
+// (void)sizeof(flags.mode); // 错误：不能这样 sizeof 位域
+```
+
+位域不能作为普通成员地址来保存，也不能直接绑定到非 `const` 引用。绑定 `const` 引用时，会根据相应规则建立临时值，不是持续观察原位域的引用。
+
+分配单元、对齐和位的排列由实现决定，`sizeof(Flags)` 不能从 `1 + 2` 位直接算出。C++98/03 发布原文允许实现选择普通 `int` 位域的符号性；[CWG 739 的追溯修正](https://cplusplus.github.io/CWG/issues/739.html)要求它遵循底层类型的符号性，因此普通 `int` 位域为有符号。本例明确使用 `unsigned int`，只写入可表示的 `1` 和 `3`。不要用位域代替显式协议编码，相关布局与表示问题见系统编程指南。[传统位域条款](https://www.open-std.org/jtc1/sc22/open/n2356/class.html#class.bit)。
+
+<a id="nested-classes"></a>
+### 6.10 嵌套类与外部对象
+
+嵌套类在外部类的作用域内声明，类型名可以写成 `Outer::Reader`。按追溯适用的 CWG 45 修正规则，嵌套类成员可以访问外部类的私有成员，但它没有自动关联的外部类对象；访问非静态成员仍需传入有效对象。
+
+**片段，放在命名空间作用域：**
+
+```cpp
+class Outer {
+    int value_;
+public:
+    explicit Outer(int value) : value_(value) {}
+    class Reader {
+    public:
+        int read(const Outer& owner) const { return owner.value_; }
+    private:
+        void internalOnly() {}
+    };
+};
+// 在函数体内：
+// Outer owner(7);
+// Outer::Reader reader;
+// int value = reader.read(owner); // 7，需要明确的 owner
+```
+
+外部类不会反过来自动获得嵌套类私有成员的访问权限，需要时仍要通过公开接口或明确授权。这是旧公开审阅稿存在过时表述的地方，应结合 [CWG 45 官方历史记录](https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2006/n2126.html#45) 阅读，不能只看修正前文本。
+
 <a id="copy"></a>
 ## 7. 复制、赋值与资源
 
@@ -1137,7 +1273,8 @@ int main() {
     std::cout << first.at(0) << ' ' << second.at(0) << '\n'; // 7 9
     first = second;
     std::cout << first.at(0) << '\n'; // 9
-    first = first; // 验证自赋值仍保持内容
+    const Buffer& sameObject = first;
+    first = sameObject; // 别名仍指向自身，验证自赋值保持内容
     const Buffer& readonly = first;
     std::cout << "size=" << readonly.size()
               << ", first=" << readonly.at(0) << '\n';
@@ -1162,11 +1299,14 @@ int main() {
 | --- | --- | --- |
 | 数值类型 | 复制值 | 检查业务范围和不变式 |
 | 值语义的字符串、容器 | 调用成员的复制操作 | 成员内部的共享关系仍由其类型决定 |
+| 内建数组成员 | 隐式复制构造和复制赋值逐元素执行相应操作 | 数组本身不能整体赋值，不妨碍包含数组的类按规则复制赋值 |
 | 裸指针 | 复制地址 | 是借用、深复制还是共享？ |
 | 引用成员 | 复制构造时仍绑定同一被引用对象 | 有效期由外部对象决定 |
 | `const` 或引用成员 | 使用隐式生成的复制赋值会成为非良构 | 禁止赋值，或手写赋值并明确其语义 |
 
 拥有资源与观察资源是不同关系。不要仅因成员是指针，就一律深复制或一律删除；由接口决定责任。
+
+表中的 `const` 成员赋值限制按本文件的传统原文范围理解；后续标准对相关默认操作条件作过调整，不直接套用现代“删除函数”的表述。数组元素的构造、复制或赋值也必须各自合法。[传统成员复制规则](https://www.open-std.org/jtc1/sc22/open/n2356/special.html#class.copy)。
 
 ### 7.4 不可复制对象与资源释放
 
@@ -1261,7 +1401,7 @@ int main() {
         Shape* pointer = &empty;
         std::cout << "cast failed: " << (dynamic_cast<Rectangle*>(pointer) == 0) << '\n';
         try {
-            dynamic_cast<Rectangle&>(*pointer);
+            (void)dynamic_cast<Rectangle&>(*pointer); // 此处只验证失败时抛异常
         } catch (const std::bad_cast&) {
             std::cout << "reference cast rejected\n";
         }
@@ -1387,6 +1527,75 @@ struct Joined : public Left, public Right {};
 
 `Joined` 中只有一个共享的 `Root` 子对象。虚继承解决子对象重复，并不自动解决所有成员查找或虚函数最终覆盖的歧义。接口组合通常应让每个抽象接口职责小、析构契约清晰，避免用复杂继承图承载大量共享可变状态。
 
+<a id="virtual-defaults"></a>
+### 8.8 完整程序：虚函数默认实参与限定调用
+
+**完整程序，C++98/03：** 同一个派生对象经不同静态接口调用，分别选择对应声明中的默认实参；显式限定名则抑制该次虚调用的动态分派。
+
+```cpp
+#include <iostream>
+
+class Base {
+public:
+    virtual ~Base() {}
+    virtual int identify(int supplied = 1) const { return 100 + supplied; }
+};
+
+class Derived : public Base {
+public:
+    virtual int identify(int supplied = 2) const { return 200 + supplied; }
+};
+
+int main() {
+    Derived object;
+    const Base& base = object;
+    std::cout << "base view: " << base.identify() << '\n';
+    std::cout << "derived view: " << object.identify() << '\n';
+    std::cout << "qualified base: " << base.Base::identify() << '\n';
+    return 0;
+}
+```
+
+输出：
+
+```text
+base view: 201
+derived view: 202
+qualified base: 101
+```
+
+前两次调用都执行 `Derived::identify`，实参分别为 1 和 2。第三次明确调用基类实现，使用基类声明的默认值 1。本例刻意展示不同默认值的影响，实际接口应统一或明确区分默认参数契约。[传统虚函数与限定调用规则](https://www.open-std.org/jtc1/sc22/open/n2356/derived.html#class.virtual)。
+
+本例仅传入默认的小整数。若推广到接受任意 `supplied`，接口仍须保证 `100 + supplied` 或 `200 + supplied` 不发生有符号溢出。
+
+<a id="covariant-return"></a>
+### 8.9 协变返回类型
+
+虚函数的覆盖通常保持相同返回类型，但符合规则的类指针或类引用可以协变。例如基类返回 `Base*`，派生覆盖返回 `Derived*`。
+
+**片段，放在命名空间作用域：返回指针借用当前对象，不分配资源。**
+
+```cpp
+class Base {
+public:
+    virtual ~Base() {}
+    virtual Base* self() { return this; }
+};
+class Derived : public Base {
+public:
+    virtual Derived* self() { return this; }
+};
+// 在函数体内：
+// Derived object;
+// Base& base = object;
+// Base* first = base.self();       // 调用派生实现，表达式类型仍按基类接口
+// Derived* second = object.self(); // 经派生接口得到 Derived*
+```
+
+协变限于相应的单层类指针或类引用；所返回类之间的基类关系必须在覆盖类中可访问且无歧义，cv 限定也须满足规则。不能把值返回 `Base` 改成 `Derived`，也不能把 `Base**` 改成 `Derived**` 当作协变。
+
+调用所选实现与调用表达式的静态返回类型仍是两个层面。示例中的借用指针仅在原对象存活时可用，不能交给 `delete`。[协变返回与转换规则](https://www.open-std.org/jtc1/sc22/open/n2356/derived.html#class.virtual)。
+
 <a id="templates"></a>
 ## 9. 模板与泛型
 
@@ -1487,7 +1696,17 @@ class FixedStorage {
 
 `PositiveCapacity` 利用负数组长度在 `N <= 0` 时产生编译错误，是传统编译期约束的示意；实际容器还需要补齐访问、初始化和范围约定。整型模板实参需要整型常量表达式；不要把运行期输入误当作模板参数。
 
-指针、引用实参在旧标准中还有链接属性和表达形式限制；字符串字面量、局部对象地址不能直接替代合格的非类型实参。这类底层用法应逐条查规则，不应从“它在编译时已知”推断一定合法。
+当指针或引用非类型实参表示对象、函数的地址时，本文件旧版规则要求满足相应外部链接和地址表达形式限制。字符串字面量、子对象地址、普通局部对象地址或内部链接对象地址不能直接替代合格的实参。
+
+**片段，放在命名空间作用域：**
+
+```cpp
+int externalValue = 7; // 具名对象，外部链接
+template <int* Address> struct Binding {};
+Binding<&externalValue> binding;
+```
+
+这不是“任何编译期已知地址都可以”。非类型参数的种类各有条件，现代版本也扩展了部分规则，应按版本核对。[传统非类型实参规则](https://www.open-std.org/jtc1/sc22/open/n2356/template.html#temp.arg.nontype)。
 
 <a id="specialization"></a>
 ### 9.5 全特化、偏特化与重载
@@ -1524,12 +1743,15 @@ template <class T> int category(T*) { return 2; } // 重载，不是偏特化
 ```cpp
 template <class Container>
 typename Container::value_type firstCopy(const Container& values) {
-    // 契约：values 非空，且提供 value_type 和 front()
+    // 契约：values 非空，const Container 上可调用 front()；
+    // 其结果可用于复制初始化 Container::value_type
     return values.front();
 }
 
 template <class Reader>
 int readInteger(Reader& reader) {
+    // 契约：Reader 提供可无参调用的成员模板 read<int>()，
+    // 其结果可用于返回 int
     return reader.template read<int>();
 }
 ```
@@ -1537,6 +1759,10 @@ int readInteger(Reader& reader) {
 `typename Container::value_type` 告诉编译器这个依赖的限定名表示类型；`reader.template read<int>()` 指出依赖成员名 `read` 是模板，让 `<` 按模板实参列表解析。
 
 这些关键字只解决解析问题，不保证实参类型提供相应成员。依赖基类的成员查找也需要注意，常见写法是 `this->member` 或合适的基类限定名，不能假设所有未限定名字都在实例化时才查找。
+
+非依赖名通常在模板定义上下文查找并绑定。依赖调用则按对应的普通查找和 ADL 规则处理：不能指望模板定义之后才出现的普通重载，在实例化时自动加入候选；关联命名空间中的声明还可能通过 ADL 按规则参与查找。
+
+`this->member` 将依赖基类成员的访问写成依赖形式，不是“强制重新搜索所有名字”。需要为模板安排定制接口时，应明确声明位置和关联类型，不依赖源文件偶然的包含顺序。[传统依赖调用候选规则](https://www.open-std.org/jtc1/sc22/open/n2356/template.html#temp.dep.candidate)。
 
 ### 9.7 定义可见、显式实例化与声明
 
@@ -1594,7 +1820,7 @@ private:
 struct Record { typedef int value_type; };
 
 template <class T>
-int hasValueType(const T&, typename T::value_type* = 0) {
+int hasValueType(const T*, typename T::value_type* = 0) {
     return 1;
 }
 
@@ -1602,13 +1828,16 @@ int hasValueType(...) { return 0; }
 
 int main() {
     Record record;
-    std::cout << hasValueType(record) << ' '
-              << hasValueType(3) << '\n';
+    const int number = 3;
+    std::cout << hasValueType(&record) << ' '
+              << hasValueType(&number) << '\n';
     return 0;
 }
 ```
 
-输出 `1 0`。`T = Record` 时模板参数类型合法，普通匹配优于省略号；`T = int` 时不存在 `int::value_type`，相应模板候选退出，选择省略号重载。
+输出 `1 0`。传入 `Record*` 时推导 `T = Record`，模板参数类型合法，普通匹配优于省略号；传入 `const int*` 时推导 `T = int`，不存在 `int::value_type`，相应模板候选退出，选择省略号重载。
+
+该接口传递对象指针而不读取对象。兜底接收的也是指针值，避免把非 POD 类对象直接传入省略号：在本文件的旧版范围中，后一种运行期传参会造成未定义行为。泛化类型检测要保持这种输入约定，或在不求值上下文中完成检测。[传统省略号实参规则](https://www.open-std.org/jtc1/sc22/open/n2356/expr.html#expr.call)。
 
 这里检测的是特定声明是否可形成，不是任意“类型能力判断器”。函数体内的一般错误不会因此消失；传统规则也不能直接替代现代的表达式 SFINAE 或 Concepts。上述机制的边界见 [传统模板实参推导条款](https://www.open-std.org/jtc1/sc22/open/n2356/template.html#temp.deduct)。
 
@@ -1710,7 +1939,95 @@ caught operation failed
 
 违反动态异常说明会进入 `std::unexpected` 机制，默认处理导致终止；这不是编译器证明“函数体中没有任何抛出操作”。自定义处理器还受到该版本异常说明规则限制。不要将旧版 `throw()` 的机制与现代 `noexcept` 的规则混为一谈。
 
+同一函数的各次声明与定义必须满足异常说明的一致性要求；带限制性异常说明的基类虚函数，其覆盖函数不能允许更宽的异常集合。动态异常说明本身不是函数类型的组成部分，也不能单凭说明不同形成重载；涉及函数指针或引用的声明仍有专门的相容规则。[传统异常说明规则](https://www.open-std.org/jtc1/sc22/open/n2356/except.html#except.spec)。
+
 异常应在能够恢复、补充信息或转换为接口规定错误表示的层面处理。调用 C 接口或跨不支持同一异常机制的边界时，先在适当层捕获并转换错误；二进制兼容和系统接口分别见工程化与系统编程指南。
+
+<a id="construction-example"></a>
+### 10.5 完整程序：构造失败清理谁？
+
+**完整程序，C++98/03：** 外层对象的构造函数体抛出异常，已经构造的成员被清理，外层对象自己的析构函数没有执行。
+
+```cpp
+#include <exception>
+#include <iostream>
+#include <stdexcept>
+
+class Component {
+public:
+    Component() { ++alive; }
+    ~Component() { --alive; }
+    static int alive;
+private:
+    Component(const Component&);
+    Component& operator=(const Component&);
+};
+int Component::alive = 0;
+
+class Composite {
+public:
+    Composite() { throw std::runtime_error("construction failed"); }
+    ~Composite() { ++destroyed; }
+    static int destroyed;
+private:
+    Composite(const Composite&);
+    Composite& operator=(const Composite&);
+    Component first_;
+    Component second_;
+};
+int Composite::destroyed = 0;
+
+int main() {
+    try {
+        Composite object;
+    } catch (const std::exception& error) {
+        std::cout << "caught: " << error.what() << '\n';
+    }
+    std::cout << "components alive: " << Component::alive << '\n';
+    std::cout << "composite destructors: " << Composite::destroyed << '\n';
+    return 0;
+}
+```
+
+输出：
+
+```text
+caught: construction failed
+components alive: 0
+composite destructors: 0
+```
+
+两个成员在进入外层构造函数体前已经构造；异常展开时依次清理 `second_`、`first_`。外层对象未完成构造，所以自身析构没有运行。这里用小范围计数演示对象清理，不让析构依赖可能失败的日志输出；它不是跨线程计数器。[传统构造异常处理规则](https://www.open-std.org/jtc1/sc22/open/n2356/except.html#except.ctor)。
+
+<a id="constructor-try-block"></a>
+### 10.6 构造函数 try 块
+
+构造函数体里的普通 `try` 块开始得太晚，不能捕获在进入函数体之前发生的基类或成员初始化异常。函数 try 块将初始化列表也纳入相应处理范围。
+
+**片段，需要 `<exception>`、`<stdexcept>`，类放在命名空间作用域：**
+
+```cpp
+class Part {
+public:
+    explicit Part(int value) {
+        if (value < 0) { throw std::invalid_argument("negative value"); }
+    }
+};
+class Owner {
+    Part part_;
+public:
+    explicit Owner(int value) try : part_(value) {
+        // 构造函数体
+    } catch (const std::exception&) {
+        // 只能依赖仍有效的参数或外部状态，不读取 part_。
+        throw;
+    }
+};
+```
+
+进入处理器前，已经构造的成员和基类已按规则清理，不能访问其非静态成员或基类来“修复”对象。构造函数的这种处理器即使走到末尾，也会自动重新抛出当前异常；不能通过 `return` 把失败的构造变成成功。
+
+它适合补充失败信息或转换异常，不替代由成员所有者负责的资源清理。[传统函数 try 块规则](https://www.open-std.org/jtc1/sc22/open/n2356/except.html#except.handle)。
 
 <a id="practice"></a>
 ## 11. 常见错误与练习
@@ -1768,6 +2085,13 @@ caught operation failed
 
 ### 11.4 本次验证记录（2026-10-07）
 
-本文 13 个完整程序已使用 MSVC 19.51、`/std:c++14 /EHsc /W4 /permissive- /utf-8` 编译并链接，分别运行后核对全部预期输出。名字遮蔽示例保留其用于教学的遮蔽警告；其余完整程序未出现编译警告。
+本轮使用本机 GCC 13.1.0 和 Clang 17.0.6，分别以 `-std=c++98`、`-std=c++03` 配合 `-Wall -Wextra -pedantic-errors` 编译、链接并运行全部 **15 个完整程序**，四组预期输出均核对通过。
 
-MSVC 不提供严格的 C++98/03 模式，因此上述运行核对与版本归属审读是不同检查。旧版语法及规则另外对照文中的 WG21 资料和缺陷修正核实；在支持相应模式的工具链上，还可以使用第 1.1 节的严格编译命令。
+| 编译器 | C++98 模式 | C++03 模式 |
+| --- | --- | --- |
+| GCC 13.1.0 | 15 个完整程序通过编译及输出核对 | 15 个完整程序通过编译及输出核对 |
+| Clang 17.0.6 | 15 个完整程序通过编译及输出核对 | 15 个完整程序通过编译及输出核对 |
+
+另将第 6.10、8.9、9.4、10.6 节的嵌套类、协变返回、外部链接模板实参、构造函数 try 块片段补齐测试入口，四组编译和行为检查均通过。内部链接对象地址及子对象地址作为相应旧版非类型实参的错误写法，也在两种编译器的两个模式下得到预期诊断。
+
+此前的 MSVC 检查仍是可用性参考，不能代替严格的旧标准模式。编译和输出核对不能证明任意输入都合法；规则与版本边界另外对照 WG21 原始资料和缺陷修正审读，历史原文与追溯修正的差异已在相关章节注明。
